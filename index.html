@@ -1,0 +1,253 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>UDA Gallery</title>
+
+<style>
+  :root{
+    --max-width:1100px;
+    --primary:#d7a52a;
+  }
+
+  html,body{
+    margin:0;
+    padding:0;
+    font-family:Arial, Helvetica, sans-serif;
+    background:#f5f5f5;
+    color:#111;
+  }
+
+  .wrap{
+    max-width:var(--max-width);
+    margin:0 auto;
+    padding:14px;
+  }
+
+  .hero{
+    background:linear-gradient(90deg,var(--primary),#f3c95b);
+    padding:18px;
+    border-radius:10px;
+    text-align:center;
+    font-size:22px;
+    font-weight:bold;
+    margin-bottom:18px;
+  }
+
+  .msg{
+    padding:14px;
+    background:#fff;
+    border-radius:8px;
+    text-align:center;
+  }
+
+  .card{
+    background:#fff;
+    border-radius:10px;
+    padding:12px;
+    margin-bottom:16px;
+    box-shadow:0 4px 12px rgba(0,0,0,0.05);
+  }
+
+  .card img{
+    width:100%;
+    height:220px;
+    object-fit:cover;
+    border-radius:8px;
+    margin-bottom:10px;
+  }
+
+  .car-title{
+    font-weight:bold;
+    font-size:18px;
+    margin-bottom:6px;
+  }
+
+  .car-otr{
+    font-weight:bold;
+    margin-bottom:4px;
+  }
+
+  .btn{
+    display:inline-block;
+    margin-top:10px;
+    padding:8px 12px;
+    background:#0077ff;
+    color:#fff;
+    text-decoration:none;
+    border-radius:6px;
+    font-weight:bold;
+  }
+
+  .gallery-img{
+    width:100%;
+    margin-bottom:15px;
+    border-radius:10px;
+  }
+
+  @media(max-width:420px){
+    .card img{ height:200px; }
+  }
+</style>
+
+</head>
+<body>
+
+<div class="wrap">
+  <div id="hero" class="hero">Loading...</div>
+  <div id="content"></div>
+</div>
+
+<script>
+(async () => {
+
+const BACKEND = "https://uda-backend.onrender.com";
+const CDN_BASE = "https://cdn.myuda.site/uda";
+
+const params = new URLSearchParams(location.search);
+const dealer = (params.get("dealer") || "").toLowerCase();
+const plate = (params.get("plate") || "").toUpperCase();
+const amount = Number(params.get("amount") || 0);
+
+const hero = document.getElementById("hero");
+const content = document.getElementById("content");
+
+function safeNum(n){
+  return Number(String(n || "").replace(/[^0-9.-]/g,"")) || 0;
+}
+
+function showMsg(text){
+  content.innerHTML = `<div class="msg">${text}</div>`;
+}
+
+if (!dealer) {
+  hero.textContent = "Invalid dealer";
+  showMsg("Dealer parameter missing.");
+  return;
+}
+
+try {
+
+  /* =====================================================
+     PLATE VIEW (SHOW ALL PHOTOS)
+  ====================================================== */
+  if (plate) {
+
+    const res = await fetch(`${BACKEND}/cars/${dealer}`);
+    const cars = await res.json();
+
+    const car = cars.find(c =>
+      String(c.PlateNumber).toUpperCase() === plate
+    );
+
+    if (!car) {
+      hero.textContent = "Car Not Found";
+      showMsg("Plate not found.");
+      return;
+    }
+
+    hero.textContent =
+      `${car.Brand} ${car.Model} ${car.Spec} ${car.Year}`;
+
+    const picCount = Number(car.PicCount || 0);
+
+    if (!picCount) {
+      showMsg("No photos available.");
+      return;
+    }
+
+    content.innerHTML = "";
+
+    for (let i = 1; i <= picCount; i++) {
+
+      const img = document.createElement("img");
+      img.className = "gallery-img";
+      img.src = `${CDN_BASE}/${dealer}/${plate}/${i}.jpg`;
+      img.loading = "lazy";
+
+      img.onerror = () => img.remove();
+
+      content.appendChild(img);
+    }
+
+    return;
+  }
+
+  /* =====================================================
+     NETTPAY VIEW (FILTER CAR LIST)
+  ====================================================== */
+
+  if (!amount) {
+    hero.textContent = "Invalid Amount";
+    showMsg("Amount parameter missing.");
+    return;
+  }
+
+  hero.textContent = `Kereta Sesuai Gaji RM ${amount}`;
+
+  const nettRes = await fetch(`${BACKEND}/nettpay/${dealer}`);
+  const nettList = await nettRes.json();
+
+  const range = nettList.find(r => Number(r.amount) === amount);
+
+  if (!range) {
+    showMsg("No salary range found.");
+    return;
+  }
+
+  const maxOTR = Number(range.maxOTR);
+
+  const carRes = await fetch(`${BACKEND}/cars/${dealer}`);
+  const cars = await carRes.json();
+
+  const filtered = cars.filter(c =>
+    String(c.Status).toUpperCase() === "NEW STOCK" &&
+    safeNum(c.OTR) <= maxOTR
+  );
+
+  if (!filtered.length) {
+    showMsg("Tiada kereta dalam julat ini.");
+    return;
+  }
+
+  content.innerHTML = "";
+
+  filtered.forEach(car => {
+
+    const plateEncoded = encodeURIComponent(car.PlateNumber);
+
+    const card = document.createElement("div");
+    card.className = "card";
+
+    card.innerHTML = `
+      <img src="${CDN_BASE}/${dealer}/${plateEncoded}/1.jpg"
+           onerror="this.style.display='none'">
+      <div class="car-title">
+        ${car.Brand} ${car.Model} ${car.Spec} ${car.Year}
+      </div>
+      <div class="car-otr">
+        RM ${safeNum(car.OTR).toLocaleString()}
+      </div>
+      <div>
+        Bulanan ${car.Monthly} utk ${car.Tenure} tahun
+      </div>
+      <a class="btn"
+         href="?dealer=${dealer}&plate=${plateEncoded}">
+         LIHAT GAMBAR
+      </a>
+    `;
+
+    content.appendChild(card);
+  });
+
+} catch (err) {
+  hero.textContent = "System Error";
+  showMsg("Failed to load data.");
+}
+
+})();
+</script>
+
+</body>
+</html>
